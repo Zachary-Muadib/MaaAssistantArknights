@@ -1,7 +1,6 @@
 name: sync-resource
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - dev
