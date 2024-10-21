@@ -1,0 +1,39 @@
+name: Sync Fork
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # Every 30 minutes
+  workflow_dispatch:  # 允许手动触发工作流
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout fork repository
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+        path: 'fork-repo'
+
+    - name: Checkout upstream repository
+      uses: actions/checkout@v2
+      with:
+        repository: 'MaaAssistantArknights/MaaAssistantArknights'
+        fetch-depth: 0
+        path: 'upstream-repo'
+
+    - name: Rsync files excluding workflows
+      run: |
+        rsync -av --exclude='.github/workflows/' upstream-repo/ fork-repo/
+
+    - name: Commit and Push changes to fork
+      env:
+        GIT_AUTHOR_NAME: ${{ github.actor }}
+        GIT_AUTHOR_EMAIL: ${{ github.actor }}@users.noreply.github.com
+        GIT_COMMITTER_NAME: ${{ github.actor }}
+        GIT_COMMITTER_EMAIL: ${{ github.actor }}@users.noreply.github.com
+      run: |
+        cd fork-repo
+        git add .
+        git commit -m "Sync with upstream excluding workflows" || echo "No changes to commit"
+        git push -f https://github.com/Zachary-Muadib/MaaAssistantArknights.git dev
