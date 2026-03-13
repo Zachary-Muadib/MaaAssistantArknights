@@ -1,8 +1,8 @@
-name: Release Pipeline (OTA)
+name: release-ota
 
 on:
   release:
-    types:
+    types: 
       - published
   workflow_dispatch:
     inputs:
@@ -22,34 +22,21 @@ env:
 
 jobs:
   create-tag:
-    name: Create OTA Release Tag in MaaRelease
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout MaaRelease
-        uses: actions/checkout@v6
+      - name: Fetch MaaRelease
+        uses: actions/checkout@v3
         with:
-          show-progress: false
           repository: ${{ format('{0}/{1}', github.repository_owner, 'MaaRelease') }}
           path: MaaRelease
           fetch-depth: 0
           token: ${{ secrets.MAARELEASE_RELEASE }}
-
-      - name: Fetch release information
+      - name: Fetch release info
         id: fetchReleaseInfo
         run: |
           mkdir -pv build-ota && cd build-ota
-
-          # Convert inputs to integers
-          limit=${{ inputs.limit || 31 }}
-          limit=${limit%.*}
-          echo "Parsed limit: $limit"
-
-          limit_2=${{ inputs.limit_2 || 30 }}
-          limit_2=${limit_2%.*}
-          echo "Parsed limit_2: $limit_2"
-
-          gh release list --repo 'MaaAssistantArknights/MaaAssistantArknights' --limit $limit | tee ./release_maa.txt
-          gh release list --repo "MaaAssistantArknights/MaaRelease" --limit $limit_2 | tee ./release_mr.txt
+          gh release list --repo 'MaaAssistantArknights/MaaAssistantArknights' --limit ${{ inputs.limit || 31 }} | tee ./release_maa.txt
+          gh release list --repo "MaaAssistantArknights/MaaRelease" --limit ${{ inputs.limit_2 || 30 }} | tee ./release_mr.txt
           head -n 1 ./release_maa.txt | awk '{ print $1 }' > ./config
 
           tail -n +1 ./release_maa.txt | awk '{ print $1 }' > ./tags_maa.txt
@@ -62,7 +49,6 @@ jobs:
 
           echo "prerelease=$([ $(head -n 1 release_maa.txt | awk '{ print $2}') = 'Pre-release' ] && echo true || echo false)" >> $GITHUB_OUTPUT
           echo "release_tag=$(head -n 1 ./config)" >> $GITHUB_OUTPUT
-
       - name: Commit and setup tag
         run: |
           cd MaaRelease
@@ -75,59 +61,43 @@ jobs:
           git push --tags
         env:
           PUSH_REMOTE: https://github-actions[bot]:${{ secrets.MAARELEASE_RELEASE }}@github.com/${{ github.repository_owner }}/MaaRelease
-
-      - name: Upload release config to GitHub
-        uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v3
         with:
           name: MaaReleaseConfig
           path: ./build-ota/config
-
     outputs:
       prerelease: ${{ steps.fetchReleaseInfo.outputs.prerelease }}
       release_tag: ${{ steps.fetchReleaseInfo.outputs.release_tag }}
 
   make-ota:
-    name: Build and Upload OTA for Windows
     needs: create-tag
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        target:
+      matrix: 
+        target: 
           - x64
     steps:
-      - name: Download release config
-        uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v3
+      - name: Fetch MaaRelease
+        uses: actions/checkout@v3
         with:
-          name: MaaReleaseConfig
-          path: ./MaaReleaseConfig
-
-      - name: Checkout MaaRelease
-        uses: actions/checkout@v6
-        with:
-          show-progress: false
           repository: ${{ format('{0}/{1}', github.repository_owner, 'MaaRelease') }}
           path: MaaRelease
           fetch-depth: 0
           token: ${{ secrets.MAARELEASE_RELEASE }}
-
-      - name: Checkout repository
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v3
         with:
-          show-progress: false
           path: MaaAssistantArknights
-
       - name: Download latest version for server
         run: |
           mkdir -pv build-ota/${{ needs.create-tag.outputs.release_tag }}
           cd build-ota/${{ needs.create-tag.outputs.release_tag }}
           gh release download ${{ needs.create-tag.outputs.release_tag }} --repo 'MaaAssistantArknights/MaaAssistantArknights' --pattern "MAA-${{ needs.create-tag.outputs.release_tag }}-win-${{ matrix.target }}.zip" --clobber
           cp *.zip ..
-
       - name: Build OTA
         run: |
           cd build-ota
           $GITHUB_WORKSPACE/MaaAssistantArknights/tools/OTAPacker/build.sh 'MaaAssistantArknights/MaaAssistantArknights' ../MaaReleaseConfig/config ${{ matrix.target }} 'MaaAssistantArknights/MaaRelease'
-
       - name: Upload to MaaRelease
         uses: svenstaro/upload-release-action@v2
         with:
@@ -139,23 +109,12 @@ jobs:
           prerelease: ${{ fromJSON(needs.create-tag.outputs.prerelease) }}
           overwrite: true
 
-      - name: Create issue on failure
-        if: failure()
-        uses: actions-cool/issues-helper@v3
-        with:
-          actions: "create-issue"
-          title: "Failed to make OTA release for Windows"
-          body: |
-            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
   make-ota-mac:
-    name: Build and Upload OTA for macOS
     needs: create-tag
-    runs-on: macos-14
+    runs-on: macos-13
     steps:
-      - name: Fetch release information
+      - name: Fetch release info
         run: gh release list --repo 'MaaAssistantArknights/MaaAssistantArknights' --limit ${{ inputs.limit || 31 }} | tee ./release_maa.txt
-
       - name: Download release packages
         run: |
           cat ./release_maa.txt | awk '{ print $1 }' | while read tag; do
@@ -164,23 +123,41 @@ jobs:
             gh api /markdown -f text="$RELEASE_NOTES" | tee ./packages/MAA-"$tag"-macos-universal.html
           done
           curl -fsSL -o packages/appcast.xml https://maa-release.hguandl.com/macos/appcast.xml
-
       - name: Setup Sparkle
-        run: |
-          gh release download --repo 'sparkle-project/Sparkle' --clobber -O - -p 'Sparkle-*.tar.xz' | tar xf -
-
-      - name: Generate update packages
+        run: gh release download --repo 'sparkle-project/Sparkle' --clobber -O - -p 'Sparkle-*.tar.xz' | tar xf -
+      - name: Generate Update Packages
         run: |
           if [ $(head -n 1 release_maa.txt | awk '{ print $2 }') = 'Pre-release' ]; then
             echo ${{ secrets.SPARKLE_PRIV_KEY }} | ./bin/generate_appcast --channel beta --ed-key-file - ./packages
           else
             echo ${{ secrets.SPARKLE_PRIV_KEY }} | ./bin/generate_appcast --ed-key-file - ./packages
           fi
-
-      - name: Clean up files
+      - name: Cleanup files
+        run: find ./packages -type f ! \( -name 'MAA-${{ needs.create-tag.outputs.release_tag }}-macos-universal.dmg' -o -name '*.delta' -o -name '*.xml' \) -print -delete
+      - name: Unpack the .dmg files for .dylib
         run: |
-          find ./packages -type f ! \( -name 'MAA-${{ needs.create-tag.outputs.release_tag }}-macos-universal.dmg' -o -name '*.delta' -o -name '*.xml' \) -print -delete
-
+          cd ${{ runner.temp }}
+          mkdir -p macos-runtime-temp
+          echo ::group::Attaching release package...
+          hdiutil attach ${{ github.workspace }}/packages/MAA-${{ needs.create-tag.outputs.release_tag }}-macos-universal.dmg
+          echo ::endgroup::
+          echo ::group::Copying files...
+          cp -v /Volumes/MAA/MAA.app/Contents/Frameworks/*.dylib macos-runtime-temp/
+          cp -vr /Volumes/MAA/MAA.app/Contents/Resources/resource macos-runtime-temp/resource
+          echo ::endgroup::
+          echo ::group::Linking files...
+          libonnxruntime_file=$(basename macos-runtime-temp/libonnxruntime*.dylib)
+          ln -vs $libonnxruntime_file macos-runtime-temp/libonnxruntime.dylib
+          libopencv_world_file=$(basename macos-runtime-temp/libopencv_world*.dylib)
+          ln -vs $libopencv_world_file macos-runtime-temp/libopencv_world4.dylib
+          echo ::endgroup::
+          cd macos-runtime-temp
+          echo ::group::Compressing files...
+          zip -yrX9 ${{ github.workspace }}/packages/MAA-${{ needs.create-tag.outputs.release_tag }}-macos-runtime-universal.zip *
+          echo ::endgroup::
+          echo ::group::Detaching release package...
+          hdiutil detach /Volumes/MAA
+          echo ::endgroup::
       - name: Upload to MaaRelease
         uses: svenstaro/upload-release-action@v2
         with:
@@ -192,18 +169,8 @@ jobs:
           prerelease: ${{ fromJSON(needs.create-tag.outputs.prerelease) }}
           overwrite: true
 
-      - name: Create issue on failure
-        if: failure()
-        uses: actions-cool/issues-helper@v3
-        with:
-          actions: "create-issue"
-          title: "Failed to make OTA release for macOS"
-          body: |
-            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
   release:
-    name: Publish to Release Mirrors
-    needs:
+    needs: 
       - make-ota
       - make-ota-mac
     runs-on: ubuntu-latest
@@ -213,3 +180,29 @@ jobs:
       - name: Setup release mirror
         run: |
           gh workflow --repo MaaAssistantArknights/MaaRelease run release-mirrors.yml
+      - name: Deploy docs
+        run: |
+          mkdir -p ${{ runner.temp }}/new
+          mkdir -p ${{ runner.temp }}/old
+          gh api /repos/MaaAssistantArknights/MaaAssistantArknights/tags --jq '.[].name' > ${{ runner.temp }}/release_maa.txt
+          export NEW_VERSION=$(sed -n '1p' ${{ runner.temp }}/release_maa.txt)
+          echo "NEW_VERSION: $NEW_VERSION"
+          export OLD_VERSION=$(sed -n '2p' ${{ runner.temp }}/release_maa.txt)
+          echo "OLD_VERSION: $OLD_VERSION"
+          gh api "/repos/MaaAssistantArknights/MaaAssistantArknights/tarball/$NEW_VERSION" > ${{ runner.temp }}/new.tar.gz
+          gh api "/repos/MaaAssistantArknights/MaaAssistantArknights/tarball/$OLD_VERSION" > ${{ runner.temp }}/old.tar.gz
+          tar -xzf ${{ runner.temp }}/new.tar.gz -C ${{ runner.temp }}/new
+          tar -xzf ${{ runner.temp }}/old.tar.gz -C ${{ runner.temp }}/old
+          export NEW_PATH="${{ runner.temp }}/new/$(ls ${{ runner.temp }}/new)/docs"
+          echo "NEW_PATH: $NEW_PATH"
+          export OLD_PATH="${{ runner.temp }}/old/$(ls ${{ runner.temp }}/old)/docs"
+          echo "OLD_PATH: $OLD_PATH"
+          export DOCS_DIFF=$(diff -aqr $NEW_PATH $OLD_PATH)
+          if [ -n "$DOCS_DIFF" ]; then
+            echo "Found changes, start to deploy the docs:"
+            echo "$DOCS_DIFF"
+            gh workflow --repo MaaAssistantArknights/maa-website run azure-deploy.yaml
+            echo "Deploying the docs."
+          else
+            echo "Nothing changed, exit."
+          fi

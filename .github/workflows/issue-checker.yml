@@ -1,5 +1,4 @@
-name: Issue Triage
-
+name: "Issue Checker"
 on:
   issues:
     types: [opened, edited]
@@ -15,13 +14,11 @@ permissions:
 
 jobs:
   triage:
-    name: Triage Issues and PRs
     runs-on: ubuntu-latest
     steps:
-      - name: Label issues and PRs Automatically
-        uses: MaaAssistantArknights/issue-checker@v1.14
-        with:
-          repo-token: "${{ secrets.GITHUB_TOKEN }}"
-          configuration-path: .github/issue-checker.yml
-          not-before: 2022-08-05T00:00:00Z
-          include-title: 1
+    - uses: zzyyyl/issue-checker@v1.7
+      with:
+        repo-token: "${{ secrets.GITHUB_TOKEN }}"
+        configuration-path: .github/issue-checker.yml
+        not-before: 2022-08-05T00:00:00Z
+        include-title: 1
